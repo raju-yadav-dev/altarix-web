@@ -632,7 +632,7 @@ main {
   font-family: "Sora", sans-serif;
   font-size: clamp(2rem, 4vw, 3.2rem);
   line-height: 1.12;
-  min-height: 7.5rem;
+  min-height: clamp(9rem, 13vw, 11.25rem);
 }
 
 .gradient-text {
@@ -648,6 +648,7 @@ main {
   min-height: 1.25em;
   max-width: 100%;
   white-space: normal;
+  vertical-align: bottom;
 }
 
 .gradient-text-copy {
@@ -1188,58 +1189,6 @@ body[data-theme="light"] .gradient-text-caret {
   display: block;
 }
 
-.old-versions {
-  margin-top: 40px;
-  padding-top: 32px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  scroll-margin-top: 110px;
-}
-
-.old-versions h3 {
-  margin: 0 0 20px;
-  font-family: "Sora", sans-serif;
-  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
-  color: var(--text-0);
-}
-
-.old-versions-list {
-  display: grid;
-  gap: 12px;
-}
-
-.old-version-item {
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 16px;
-  align-items: center;
-  transition: all 0.2s ease;
-}
-
-.old-version-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.old-version-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.old-version-number {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text-0);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
 .old-version-current {
   padding: 3px 8px;
   border-radius: 999px;
@@ -1252,46 +1201,178 @@ body[data-theme="light"] .gradient-text-caret {
   text-transform: uppercase;
 }
 
-.old-version-date {
-  font-size: 0.8rem;
-  color: var(--text-1);
+.downloads-archive {
+  grid-column: 1 / -1;
+  padding: 18px;
+  scroll-margin-top: 110px;
 }
 
-.old-version-actions {
+.downloads-archive summary {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  list-style: none;
 }
 
-.old-version-link {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+.downloads-archive summary::-webkit-details-marker {
+  display: none;
+}
+
+.downloads-archive summary span,
+.downloads-os-head p {
+  color: var(--primary);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.downloads-archive summary strong {
+  color: var(--text-0);
+  font-family: "Sora", sans-serif;
+  font-size: clamp(1rem, 1.7vw, 1.35rem);
+  text-align: right;
+}
+
+.downloads-archive-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.downloads-os-group {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 14px;
+}
+
+.downloads-os-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.downloads-os-head h3 {
+  margin: 4px 0 0;
+  font-family: "Sora", sans-serif;
+}
+
+.downloads-os-head > span {
   color: var(--text-1);
-  font-size: 0.8rem;
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  font-size: 0.82rem;
   white-space: nowrap;
 }
 
-.old-version-link:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-0);
+.downloads-version-list {
+  display: grid;
+  gap: 12px;
 }
 
-@media (max-width: 768px) {
-  .old-version-item {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  
-  .old-version-actions {
-    justify-content: flex-start;
-  }
+.downloads-version-group {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(5, 12, 24, 0.34);
+  padding: 12px;
 }
+
+.downloads-version-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.downloads-version-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.downloads-version-head h4 {
+  margin: 0;
+  font-family: "Sora", sans-serif;
+  font-size: 1rem;
+}
+
+.downloads-version-head p {
+  color: var(--text-1);
+  font-size: 0.82rem;
+  margin: 4px 0 0;
+}
+
+.downloads-version-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.downloads-version-meta > span:not(.old-version-current) {
+  color: var(--text-1);
+  font-size: 0.82rem;
+}
+
+.downloads-version-os-list {
+  display: grid;
+  gap: 12px;
+}
+
+.downloads-file-list {
+  display: grid;
+  gap: 8px;
+}
+
+.downloads-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-0);
+  text-decoration: none;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.downloads-file-row:hover {
+  background: rgba(43, 245, 199, 0.08);
+  border-color: rgba(43, 245, 199, 0.26);
+  transform: translateY(-1px);
+}
+
+.downloads-file-row strong,
+.downloads-file-row small {
+  display: block;
+}
+
+.downloads-file-row small {
+  color: var(--text-1);
+  font-size: 0.78rem;
+  margin-top: 3px;
   overflow-wrap: anywhere;
-  opacity: 0.95;
+}
+
+.downloads-file-action {
+  color: var(--primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.downloads-file-action em {
+  color: var(--text-1);
+  display: block;
+  font-style: normal;
+  font-weight: 500;
 }
 
 .downloads-notes-list {
@@ -1394,22 +1475,27 @@ body[data-theme="light"] .gradient-text-caret {
 
 .downloads-guide-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 14px;
 }
 
 .downloads-guide {
   padding: 18px;
+  min-height: 100%;
 }
 
 .downloads-guide h3 {
   margin: 8px 0 10px;
   font-family: "Sora", sans-serif;
+  font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+  line-height: 1.28;
 }
 
 .downloads-guide p {
   margin: 0;
   color: var(--text-1);
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 
 .downloads-guide-tag {
@@ -2188,6 +2274,28 @@ body[data-theme="light"] .gradient-text-caret {
 
   .auth-slot .btn {
     min-width: 110px;
+  }
+
+  .downloads-archive summary,
+  .downloads-os-head,
+  .downloads-version-head,
+  .downloads-file-row {
+    grid-template-columns: 1fr;
+  }
+
+  .downloads-archive summary,
+  .downloads-os-head,
+  .downloads-version-head {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .downloads-archive summary strong,
+  .downloads-file-action,
+  .downloads-version-meta {
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
   }
 
   .form-foot {

@@ -324,6 +324,7 @@ async function loadDownloads() {
     (window.AltarixWeb && typeof window.AltarixWeb.buildAppUrl === "function")
       ? window.AltarixWeb.buildAppUrl("api/update")
       : "https://altarix.vercel.app/api/update";
+  let installerArchiveRequested = window.location.hash === "#allInstallers";
 
   const installers = {
     windowsExe: {
@@ -418,14 +419,15 @@ async function loadDownloads() {
     if (/\.(exe|msi|deb|dmg|pkg|aab|apk|npm)(\?|#|$)/i.test(normalized)) {
       const directName = normalized.match(/[^/]+\.(exe|msi|deb|dmg|pkg|aab|apk|npm)(?:[?#].*)?$/i)?.[0] || "";
       if (!directName) return normalized;
-      if (key === "windowsExe") return normalized;
-      if (key === "windowsMsi") {
-        return normalized.replace(/\.exe(\?|#|$)/i, ".msi$1");
+      const extension = target.file.split(".").pop() || "";
+      let nextUrl = normalized.replace(/\.(exe|msi|deb|dmg|pkg|aab|apk|npm)(\?|#|$)/i, `.${extension}$2`);
+      if (target.family === "Windows") {
+        nextUrl = nextUrl.replace(/linux|ubuntu|debian/gi, "Windows");
       }
-      if (key === "linuxDeb") {
-        return normalized.replace(/\.exe(\?|#|$)/i, ".deb$1");
+      if (target.family === "Linux") {
+        nextUrl = nextUrl.replace(/windows|win64|win32|win/gi, "Linux");
       }
-      return normalized;
+      return nextUrl;
     }
 
     if (normalized.includes("{os}") || normalized.includes("{ext}")) {
@@ -534,29 +536,283 @@ async function loadDownloads() {
     };
   };
 
+  const installerTypeToKey = {
+    exe: "windowsExe",
+    windowsexe: "windowsExe",
+    winexe: "windowsExe",
+    msi: "windowsMsi",
+    windowsmsi: "windowsMsi",
+    deb: "linuxDeb",
+    linux: "linuxDeb",
+    linuxdeb: "linuxDeb"
+  };
+
+  const inferInstallerKey = (row) => {
+    const compactType = normalizeType(row?.type).replace(/[\s_-]+/g, "");
+    if (installerTypeToKey[compactType]) {
+      return installerTypeToKey[compactType];
+    }
+
+    const url = String(row?.download_url || "").toLowerCase();
+    if (/\.msi(?:[?#]|$)/.test(url)) return "windowsMsi";
+    if (/\.deb(?:[?#]|$)/.test(url)) return "linuxDeb";
+    if (/\.exe(?:[?#]|$)/.test(url)) return "windowsExe";
+    return "";
+  };
+
+  const normalizeVersionLabel = (value) => String(value || "").trim();
+
+  const sameVersion = (a, b) => (
+    normalizeVersionLabel(a).replace(/^v/i, "") === normalizeVersionLabel(b).replace(/^v/i, "")
+  );
+
+  const compareVersionsDesc = (a, b) => {
+    const aLabel = normalizeVersionLabel(a).replace(/^v/i, "");
+    const bLabel = normalizeVersionLabel(b).replace(/^v/i, "");
+    const aParts = aLabel.split(/[^\d]+/).filter(Boolean).map(Number);
+    const bParts = bLabel.split(/[^\d]+/).filter(Boolean).map(Number);
+    const length = Math.max(aParts.length, bParts.length);
+
+    for (let index = 0; index < length; index += 1) {
+      const aPart = aParts[index] || 0;
+      const bPart = bParts[index] || 0;
+      if (aPart !== bPart) return bPart - aPart;
+    }
+
+    return bLabel.localeCompare(aLabel);
+  };
+
+  const getFileNameFromUrl = (url, fallbackName) => {
+    try {
+      const parsed = new URL(url, window.location.href);
+      const name = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() || "");
+      return name || fallbackName;
+    } catch (_error) {
+      const name = String(url || "").split(/[?#]/)[0].split("/").filter(Boolean).pop();
+      return name || fallbackName;
+    }
+  };
+
+  const buildInstallerArchive = (currentVersion, urls, currentNotes, updateRows) => {
+    const archive = new Map();
+    const rowsByVersion = new Map();
+    const installerOrder = Object.keys(installers);
+    const osOrder = {
+      Windows: 1,
+      Linux: 2
+    };
+
+    const addRecord = ({ version: recordVersion, key, url, notes, isCurrent = false, isDerived = false }) => {
+      const item = installers[key];
+      const versionLabel = normalizeVersionLabel(recordVersion);
+      const downloadUrl = String(url || "").trim();
+      if (!item || !versionLabel || !downloadUrl || downloadUrl === "#") return;
+
+      if (!archive.has(item.family)) {
+        archive.set(item.family, {
+          label: item.family,
+          order: osOrder[item.family] || 99,
+          versions: new Map()
+        });
+      }
+
+      const osGroup = archive.get(item.family);
+      if (!osGroup.versions.has(versionLabel)) {
+        osGroup.versions.set(versionLabel, {
+          version: versionLabel,
+          notes: String(notes || "").trim(),
+          isCurrent: sameVersion(versionLabel, currentVersion),
+          files: new Map()
+        });
+      }
+
+      const versionGroup = osGroup.versions.get(versionLabel);
+      if (!versionGroup.notes && notes) {
+        versionGroup.notes = String(notes || "").trim();
+      }
+      versionGroup.isCurrent = versionGroup.isCurrent || isCurrent;
+      if (!versionGroup.files.has(key)) {
+        versionGroup.files.set(key, {
+          key,
+          order: installerOrder.indexOf(key),
+          label: item.label,
+          type: item.type,
+          file: getFileNameFromUrl(downloadUrl, item.file),
+          url: downloadUrl,
+          isDerived
+        });
+      }
+    };
+
+    (Array.isArray(updateRows) ? updateRows : []).forEach((row) => {
+      const rowVersion = normalizeVersionLabel(row?.version);
+      if (!rowVersion) return;
+      if (!rowsByVersion.has(rowVersion)) {
+        rowsByVersion.set(rowVersion, []);
+      }
+      rowsByVersion.get(rowVersion).push(row);
+    });
+
+    rowsByVersion.forEach((rows, rowVersion) => {
+      rows.forEach((row) => {
+        addRecord({
+          version: rowVersion,
+          key: inferInstallerKey(row),
+          url: row?.download_url,
+          notes: row?.release_notes,
+          isCurrent: sameVersion(rowVersion, currentVersion)
+        });
+      });
+
+      const exeRow = rows.find((row) => inferInstallerKey(row) === "windowsExe" && row?.download_url);
+      if (exeRow) {
+        Object.keys(installers).forEach((key) => {
+          addRecord({
+            version: rowVersion,
+            key,
+            url: buildDownloadUrl(exeRow.download_url, key),
+            notes: exeRow.release_notes,
+            isCurrent: sameVersion(rowVersion, currentVersion),
+            isDerived: true
+          });
+        });
+      }
+    });
+
+    Object.keys(installers).forEach((key) => {
+      addRecord({
+        version: currentVersion,
+        key,
+        url: urls[key],
+        notes: currentNotes,
+        isCurrent: true
+      });
+    });
+
+    return Array.from(archive.values())
+      .sort((a, b) => a.order - b.order)
+      .map((osGroup) => ({
+        ...osGroup,
+        versions: Array.from(osGroup.versions.values())
+          .sort((a, b) => compareVersionsDesc(a.version, b.version))
+          .map((versionGroup) => ({
+            ...versionGroup,
+            files: Array.from(versionGroup.files.values()).sort((a, b) => a.order - b.order)
+          }))
+      }));
+  };
+
+  const renderInstallerArchive = (archiveGroups) => {
+    const formatFileCount = (count) => `${count} file${count === 1 ? "" : "s"}`;
+
+    if (!archiveGroups.length) {
+      return `
+        <details id="allInstallers" class="downloads-archive glass">
+          <summary>
+            <span>All installers</span>
+            <strong>No archived installers are available yet.</strong>
+          </summary>
+        </details>
+      `;
+    }
+
+    const versionMap = new Map();
+    archiveGroups.forEach((osGroup) => {
+      osGroup.versions.forEach((versionGroup) => {
+        if (!versionMap.has(versionGroup.version)) {
+          versionMap.set(versionGroup.version, {
+            version: versionGroup.version,
+            notes: versionGroup.notes,
+            isCurrent: versionGroup.isCurrent,
+            osGroups: []
+          });
+        }
+
+        const targetVersion = versionMap.get(versionGroup.version);
+        if (!targetVersion.notes && versionGroup.notes) {
+          targetVersion.notes = versionGroup.notes;
+        }
+        targetVersion.isCurrent = targetVersion.isCurrent || versionGroup.isCurrent;
+        targetVersion.osGroups.push({
+          label: osGroup.label,
+          order: osGroup.order,
+          files: versionGroup.files
+        });
+      });
+    });
+
+    const versionsHtml = Array.from(versionMap.values())
+      .sort((a, b) => compareVersionsDesc(a.version, b.version))
+      .map((versionGroup) => {
+        const notes = versionGroup.notes.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || "";
+        const fileCount = versionGroup.osGroups.reduce((total, osGroup) => total + osGroup.files.length, 0);
+        const osGroupsHtml = versionGroup.osGroups
+          .sort((a, b) => a.order - b.order)
+          .map((osGroup) => {
+            const filesHtml = osGroup.files.map((file) => `
+          <a class="downloads-file-row" href="${escapeHtml(file.url)}" download>
+            <span>
+              <strong>${escapeHtml(file.label)}</strong>
+              <small>${escapeHtml(file.file)}</small>
+            </span>
+            <span class="downloads-file-action">
+              ${file.isDerived ? '<em>Resolved</em>' : ""}
+              Download ${escapeHtml(file.type)}
+            </span>
+          </a>
+        `).join("");
+
+            return `
+              <section class="downloads-os-group">
+                <div class="downloads-os-head">
+                  <div>
+                    <p class="downloads-platform-family">${escapeHtml(osGroup.label)}</p>
+                    <h3>${escapeHtml(osGroup.label)} installers</h3>
+                  </div>
+                  <span>${formatFileCount(osGroup.files.length)}</span>
+                </div>
+                <div class="downloads-file-list">
+                  ${filesHtml}
+                </div>
+              </section>
+            `;
+          }).join("");
+
+        return `
+          <article class="downloads-version-group downloads-version-shell">
+            <div class="downloads-version-head">
+              <div>
+                <h4>Altarix ${escapeHtml(versionGroup.version)}</h4>
+                ${notes ? `<p>${escapeHtml(notes)}</p>` : ""}
+              </div>
+              <div class="downloads-version-meta">
+                ${versionGroup.isCurrent ? '<span class="old-version-current">Current</span>' : ""}
+                <span>${formatFileCount(fileCount)}</span>
+              </div>
+            </div>
+            <div class="downloads-version-os-list">
+              ${osGroupsHtml}
+            </div>
+          </article>
+        `;
+      }).join("");
+
+    return `
+      <details id="allInstallers" class="downloads-archive glass">
+        <summary>
+          <span>All installers</span>
+          <strong>Grouped by version, OS, and installer file type</strong>
+        </summary>
+        <div class="downloads-archive-body">
+          ${versionsHtml}
+        </div>
+      </details>
+    `;
+  };
+
   const renderDownloads = (version, urls, recommendedKey, releaseNotes, sourceLabel, sourceDownloadUrl, primaryDownloadUrl, debugInfo, oldVersions) => {
     const recommended = installers[recommendedKey] || installers.windowsExe;
-    
-    // Group by version and keep only the first record of each version to avoid duplicate installer rows.
-    const versionMap = new Map();
-    if (Array.isArray(oldVersions)) {
-      oldVersions.forEach(v => {
-        const ver = String(v?.version || "").trim();
-        if (ver && !versionMap.has(ver)) {
-          versionMap.set(ver, v);
-        }
-      });
-    }
-
-    if (version && !versionMap.has(version)) {
-      versionMap.set(version, {
-        version,
-        download_url: primaryDownloadUrl || urls[recommendedKey] || "",
-        release_notes: releaseNotes
-      });
-    }
-
-    const allVersionsList = Array.from(versionMap.values());
+    const archiveGroups = buildInstallerArchive(version, urls, releaseNotes, oldVersions);
     const items = Object.entries(installers)
       .map(([key, item]) => {
         const isRecommended = key === recommendedKey;
@@ -612,55 +868,22 @@ async function loadDownloads() {
     const pickedDeb = String(debugInfo?.picked?.deb || "n/a");
 
     if (summaryHost) {
-      const allVersionsHtml = allVersionsList.length ? `
-        <div id="allVersions" class="old-versions">
-          <h3>All versions</h3>
-          <div class="old-versions-list">
-            ${allVersionsList.map((v) => {
-              const versionNum = escapeHtml(String(v?.version || "").trim());
-              const downloadUrl = escapeHtml(String(v?.download_url || "").trim());
-              const notes = escapeHtml(String(v?.release_notes || "").trim().split('\n')[0]);
-              const isCurrent = versionNum === escapeHtml(version || "");
-              return `
-                <div class="old-version-item">
-                  <div class="old-version-info">
-                    <div class="old-version-number">
-                      Altarix ${versionNum}
-                      ${isCurrent ? '<span class="old-version-current">Current</span>' : ''}
-                    </div>
-                    <div class="old-version-date">${notes ? `${notes.substring(0, 50)}...` : 'Release archive'}</div>
-                  </div>
-                  <div class="old-version-actions">
-                    ${downloadUrl ? `<a class="old-version-link" href="${downloadUrl}" download>Download</a>` : '<span class="old-version-link" style="opacity: 0.5;">Unavailable</span>'}
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      ` : '';
-
       summaryHost.innerHTML = `
         <div class="downloads-summary-copy">
           <p class="kicker">Latest release</p>
           <h3>Altarix ${escapeHtml(version || "Unknown")}</h3>
           <p>
-            Download the installer that matches your system. The release source is the exact
-            Windows EXE URL stored in the database update record, and the page resolves the
-            matching MSI and Linux links from it.
+            Download the installer that matches your system, or open the complete archive to browse
+            every version by operating system and installer file type.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="${escapeHtml(urls[recommendedKey])}" download>
               Download recommended package
             </a>
-            <a class="btn btn-ghost" href="#downloadSections">
+            <a class="btn btn-ghost" href="#allInstallers" data-open-all-installers>
               View all installers
             </a>
-            <a class="btn btn-ghost" href="#allVersions">
-              List of versions
-            </a>
           </div>
-          ${allVersionsHtml}
         </div>
         <div class="downloads-summary-meta">
           <div class="downloads-meta-card">
@@ -707,7 +930,31 @@ async function loadDownloads() {
       `;
     }
 
-    host.innerHTML = items;
+    host.innerHTML = `${items}${renderInstallerArchive(archiveGroups)}`;
+
+    const openInstallerArchive = (event) => {
+      const archive = document.getElementById("allInstallers");
+      if (!archive) return;
+      if (event) event.preventDefault();
+      installerArchiveRequested = true;
+      try {
+        window.history.replaceState(null, "", "#allInstallers");
+      } catch (_error) {
+        // Browsers can block history updates in unusual embedded contexts.
+      }
+      archive.open = true;
+      window.requestAnimationFrame(() => {
+        archive.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    };
+
+    document.querySelectorAll("[data-open-all-installers]").forEach((link) => {
+      link.addEventListener("click", openInstallerArchive);
+    });
+
+    if (installerArchiveRequested) {
+      openInstallerArchive();
+    }
   };
 
   const cacheKey = "altarix-download-update-cache-v1";
@@ -808,26 +1055,39 @@ function initRotatingText() {
 
   node.appendChild(textNode);
   node.appendChild(caretNode);
+  node.classList.add("is-typing");
 
   const heading = node.closest("h1");
-  if (heading) {
+  const reserveRotatingTextSpace = () => {
+    if (!heading) return;
+    const currentText = textNode.textContent;
     let maxHeight = 0;
     let maxWidth = 0;
+    heading.style.minHeight = "";
+    node.style.minWidth = "";
     const headingWidth = heading.getBoundingClientRect().width;
     words.forEach((word) => {
       textNode.textContent = word;
       const bounds = textNode.getBoundingClientRect();
-      maxHeight = Math.max(maxHeight, heading.getBoundingClientRect().height);
       maxWidth = Math.max(maxWidth, bounds.width);
+    });
+    if (maxWidth > 0 && headingWidth > 0) {
+      node.style.minWidth = `${Math.ceil(Math.min(maxWidth, headingWidth))}px`;
+    }
+    words.forEach((word) => {
+      textNode.textContent = word;
+      maxHeight = Math.max(maxHeight, heading.getBoundingClientRect().height);
     });
     if (maxHeight > 0) {
       heading.style.minHeight = `${Math.ceil(maxHeight)}px`;
     }
-    if (maxWidth > 0 && headingWidth > 0) {
-      node.style.minWidth = `${Math.ceil(Math.min(maxWidth, headingWidth))}px`;
-    }
+    textNode.textContent = currentText;
+  };
+
+  reserveRotatingTextSpace();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(reserveRotatingTextSpace).catch(() => {});
   }
-  node.classList.add("is-typing");
 
   let wordIndex = 0;
   let charIndex = 0;
@@ -867,24 +1127,10 @@ function initRotatingText() {
   textNode.textContent = "";
   setTimeout(tick, 300);
 
+  let resizeTimer;
   window.addEventListener("resize", () => {
-    if (!heading) return;
-    let maxHeight = 0;
-    let maxWidth = 0;
-    const headingWidth = heading.getBoundingClientRect().width;
-    words.forEach((word) => {
-      textNode.textContent = word;
-      const bounds = textNode.getBoundingClientRect();
-      maxHeight = Math.max(maxHeight, heading.getBoundingClientRect().height);
-      maxWidth = Math.max(maxWidth, bounds.width);
-    });
-    if (maxHeight > 0) {
-      heading.style.minHeight = `${Math.ceil(maxHeight)}px`;
-    }
-    if (maxWidth > 0 && headingWidth > 0) {
-      node.style.minWidth = `${Math.ceil(Math.min(maxWidth, headingWidth))}px`;
-    }
-    textNode.textContent = "";
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(reserveRotatingTextSpace, 120);
   });
 }
 
